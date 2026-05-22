@@ -20,6 +20,7 @@ import {
   Check,
   Clock,
   ArrowLeft,
+  RefreshCw,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +79,14 @@ interface MessageThreadProps {
    * keep working.
    */
   resyncToken?: number;
+  /**
+   * Fired by the manual-refresh button in the thread header. The parent
+   * typically bumps the same `resyncToken` it controls — this gives the
+   * user a way to force a refetch when they suspect realtime missed an
+   * event (or they're impatient). Optional so existing callers keep
+   * working; the button is only rendered when this is provided.
+   */
+  onRefresh?: () => void;
 }
 
 function formatDateSeparator(dateStr: string): string {
@@ -121,6 +130,7 @@ export function MessageThread({
   onAssignChange,
   onBack,
   resyncToken = 0,
+  onRefresh,
 }: MessageThreadProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -128,6 +138,28 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  // Purely visual spin state for the manual-refresh button. The actual
+  // refetch is fire-and-forget through `onRefresh` (which bumps the
+  // parent's resyncToken); the 700ms spin is just feedback so the click
+  // doesn't feel like a no-op. Cleared via the timer ref on unmount.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, []);
+  const handleRefreshClick = useCallback(() => {
+    if (isRefreshing || !onRefresh) return;
+    setIsRefreshing(true);
+    onRefresh();
+    refreshTimerRef.current = setTimeout(() => {
+      setIsRefreshing(false);
+      refreshTimerRef.current = null;
+    }, 700);
+  }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
 
   // Profiles are bounded by RLS to rows the current user is allowed to
@@ -696,6 +728,28 @@ export function MessageThread({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Manual refresh — forces a refetch of the messages + the
+              conversation list (the parent bumps its resyncToken). Useful
+              when realtime missed an event or the agent just wants to be
+              sure nothing's stale. Only rendered when the parent wires
+              up `onRefresh`. */}
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={handleRefreshClick}
+              disabled={isRefreshing}
+              aria-label="Refresh conversation"
+              title="Refresh"
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-white disabled:opacity-60",
+              )}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
+              />
+            </button>
+          )}
+
           {/* Status dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
