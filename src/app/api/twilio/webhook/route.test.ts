@@ -2,19 +2,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computeTwilioSignature } from '@/lib/sms/twilio-signature'
 import { POST } from './route'
 
-const URL = 'https://crm.test/api/twilio/webhook'
+const WEBHOOK_URL = 'https://crm.test/api/twilio/webhook'
 const AUTH_TOKEN = 'twilio-test-token'
 
 function twilioRequest(
   params: Record<string, string>,
   signature: string | null,
+  requestUrl: string = WEBHOOK_URL,
 ): Request {
   const body = new URLSearchParams(params).toString()
   const headers: Record<string, string> = {
     'content-type': 'application/x-www-form-urlencoded',
   }
   if (signature !== null) headers['x-twilio-signature'] = signature
-  return new Request(URL, { method: 'POST', headers, body })
+  return new Request(requestUrl, { method: 'POST', headers, body })
 }
 
 afterEach(() => {
@@ -49,19 +50,23 @@ describe('POST /api/twilio/webhook — no-database paths', () => {
     vi.stubEnv('TWILIO_AUTH_TOKEN', AUTH_TOKEN)
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', '')
     const params = { MessageSid: 'SM1' } // no From / To
-    const sig = computeTwilioSignature(AUTH_TOKEN, URL, params)
+    const sig = computeTwilioSignature(AUTH_TOKEN, WEBHOOK_URL, params)
     const res = await POST(twilioRequest(params, sig))
     expect(res.status).toBe(400)
   })
 
   it('validates against NEXT_PUBLIC_SITE_URL when set (proxy-canonical URL)', async () => {
     vi.stubEnv('TWILIO_AUTH_TOKEN', AUTH_TOKEN)
-    // Operator configured the canonical URL; Twilio signed that URL even
-    // though the request object internally carries the same value here.
+    // Operator configured the canonical URL; the request itself arrives via
+    // an internal proxy origin that differs from the canonical one. Twilio
+    // signed the canonical URL, so only the env-var branch can validate it —
+    // if signedUrl() fell back to request.url, verification would run
+    // against the internal origin and fail with 403.
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://crm.test')
     const params = { MessageSid: 'SM1' }
-    const sig = computeTwilioSignature(AUTH_TOKEN, URL, params)
-    const res = await POST(twilioRequest(params, sig))
+    const sig = computeTwilioSignature(AUTH_TOKEN, WEBHOOK_URL, params)
+    const internalUrl = 'http://internal-proxy:3000/api/twilio/webhook'
+    const res = await POST(twilioRequest(params, sig, internalUrl))
     // Signature accepted → proceeds past 403 into payload validation (400).
     expect(res.status).toBe(400)
   })
