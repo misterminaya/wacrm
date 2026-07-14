@@ -646,3 +646,21 @@ export interface QuickReply {
   created_at: string;
   updated_at: string;
 }
+
+// Inbound SMS received via the Twilio webhook (receive-only — see
+// docs/superpowers/specs/2026-07-14-twilio-sms-webhook-design.md).
+export interface SmsMessage {
+  id: string;
+  account_id: string;
+  contact_id: string | null;
+  from_number: string;
+  to_number: string;
+  body: string | null;
+  twilio_sid: string;
+  num_media: number;
+  media_urls: string[] | null;
+  received_at: string;
+  created_at: string;
+  /** Joined contact row (select alias), when the sender matched. */
+  contact?: { id: string; name: string | null } | null;
+}
