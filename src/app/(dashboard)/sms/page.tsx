@@ -1,79 +1,103 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { buildSmsSearchPattern } from "@/lib/sms/search";
 import type { SmsMessage } from "@/types";
-import { Loader2, MessageSquareText, Paperclip } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  MessageSquareText,
+  Paperclip,
+  Search,
+} from "lucide-react";
+import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-interface SenderGroup {
-  fromNumber: string;
-  contactName: string | null;
-  messages: SmsMessage[]; // chronological (oldest first)
-  latestAt: string;
-}
-
-/** Group a reverse-chronological page of SMS by sender number. */
-function groupBySender(messages: SmsMessage[]): SenderGroup[] {
-  const groups = new Map<string, SenderGroup>();
-  for (const msg of messages) {
-    let group = groups.get(msg.from_number);
-    if (!group) {
-      group = {
-        fromNumber: msg.from_number,
-        contactName: msg.contact?.name ?? null,
-        messages: [],
-        latestAt: msg.received_at,
-      };
-      groups.set(msg.from_number, group);
-    }
-    group.messages.push(msg);
-    if (msg.received_at > group.latestAt) group.latestAt = msg.received_at;
-    if (!group.contactName && msg.contact?.name) {
-      group.contactName = msg.contact.name;
-    }
-  }
-  return [...groups.values()]
-    .map((g) => ({
-      ...g,
-      messages: [...g.messages].sort((a, b) =>
-        a.received_at.localeCompare(b.received_at),
-      ),
-    }))
-    .sort((a, b) => b.latestAt.localeCompare(a.latestAt));
-}
+const PAGE_SIZE = 25;
 
 export default function SmsPage() {
   const { accountId } = useAuth();
-  const [messages, setMessages] = useState<SmsMessage[] | null>(null);
+  const [rows, setRows] = useState<SmsMessage[] | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedTerm, setDebouncedTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Debounce the search box; a term change always jumps back to page 0.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedTerm(searchTerm);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
 
   const load = useCallback(async () => {
     if (!accountId) return;
     const supabase = createClient();
-    const { data, error: fetchErr } = await supabase
+    const pattern = buildSmsSearchPattern(debouncedTerm);
+
+    let query = supabase
       .from("sms_messages")
-      .select("*, contact:contacts(id, name)")
-      .eq("account_id", accountId)
+      .select("*, contact:contacts(id, name)", { count: "exact" })
+      .eq("account_id", accountId);
+
+    if (pattern) {
+      // Two-step search: resolve contact-name matches to ids first, then
+      // OR them with the number filter. contact_id is stamped on each row
+      // by the webhook, so name search costs one extra small query.
+      const { data: matched } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("account_id", accountId)
+        .ilike("name", pattern)
+        .limit(50);
+      const ids = (matched ?? []).map((c: { id: string }) => c.id);
+      // The pattern is safe inside or(): escapeIlike strips , ( ) and we
+      // quote the value so spaces and + survive PostgREST parsing.
+      query =
+        ids.length > 0
+          ? query.or(
+              `from_number.ilike."${pattern}",contact_id.in.(${ids.join(",")})`,
+            )
+          : query.ilike("from_number", pattern);
+    }
+
+    const { data, count, error: fetchErr } = await query
       .order("received_at", { ascending: false })
-      .limit(500);
+      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+
     if (fetchErr) {
       setError(fetchErr.message);
       return;
     }
-    setMessages((data ?? []) as SmsMessage[]);
-  }, [accountId]);
+    setError(null);
+    setRows((data ?? []) as SmsMessage[]);
+    setTotalCount(count ?? 0);
+  }, [accountId, page, debouncedTerm]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
-  const groups = useMemo(
-    () => (messages ? groupBySender(messages) : []),
-    [messages],
-  );
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const hasPrev = page > 0;
+  const hasNext = page < totalPages - 1;
+  const searching = buildSmsSearchPattern(debouncedTerm) !== null;
 
   if (error) {
     return (
@@ -83,7 +107,7 @@ export default function SmsPage() {
     );
   }
 
-  if (messages === null) {
+  if (rows === null) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -91,7 +115,7 @@ export default function SmsPage() {
     );
   }
 
-  if (groups.length === 0) {
+  if (rows.length === 0 && !searching) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <MessageSquareText className="h-8 w-8 text-muted-foreground" />
@@ -106,65 +130,121 @@ export default function SmsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 lg:p-6">
-      {groups.map((group) => (
-        <section
-          key={group.fromNumber}
-          className="rounded-lg border border-border bg-card"
-        >
-          <header className="flex items-baseline justify-between gap-2 border-b border-border px-4 py-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold">
-                {group.contactName ?? group.fromNumber}
-              </h2>
-              {group.contactName && (
-                <p className="text-xs text-muted-foreground">
-                  {group.fromNumber}
-                </p>
-              )}
-            </div>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {formatDistanceToNow(new Date(group.latestAt), {
-                addSuffix: true,
-              })}
+    <div className="mx-auto flex max-w-4xl flex-col gap-4 p-4 lg:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div className="relative w-full max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by number or contact…"
+            className="pl-8"
+          />
+        </div>
+        <p className="shrink-0 text-xs text-muted-foreground">
+          {totalCount} {totalCount === 1 ? "message" : "messages"}
+        </p>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-border p-8 text-center text-sm text-muted-foreground">
+          No messages match your search.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-48">From</TableHead>
+                <TableHead>Message</TableHead>
+                <TableHead className="w-44">Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((msg) => (
+                <TableRow key={msg.id}>
+                  <TableCell className="align-top">
+                    {msg.contact?.name ? (
+                      <>
+                        <p className="truncate text-sm font-medium">
+                          {msg.contact.name}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {msg.from_number}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="truncate text-sm">{msg.from_number}</p>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <p className="max-w-md truncate text-sm">
+                      {msg.body ?? (
+                        <span className="italic text-muted-foreground">
+                          (no text)
+                        </span>
+                      )}
+                    </p>
+                    {msg.num_media > 0 && (
+                      <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Paperclip className="h-3 w-3" />
+                        {(msg.media_urls ?? []).map((url, i) => (
+                          <a
+                            key={`${msg.id}-${i}`}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
+                            media {i + 1}
+                          </a>
+                        ))}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-top text-xs text-muted-foreground">
+                    <time dateTime={msg.received_at}>
+                      {format(new Date(msg.received_at), "PPp")}
+                    </time>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Showing {page * PAGE_SIZE + 1}–
+            {Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount}
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={!hasPrev}
+              onClick={() => setPage((p) => p - 1)}
+              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="px-2 text-xs text-muted-foreground">
+              Page {page + 1} of {totalPages}
             </span>
-          </header>
-          <ul className="divide-y divide-border">
-            {group.messages.map((msg) => (
-              <li key={msg.id} className="px-4 py-3">
-                <p className="whitespace-pre-wrap break-words text-sm">
-                  {msg.body ?? (
-                    <span className="italic text-muted-foreground">
-                      (no text)
-                    </span>
-                  )}
-                </p>
-                <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                  <time dateTime={msg.received_at}>
-                    {format(new Date(msg.received_at), "PPp")}
-                  </time>
-                  {msg.num_media > 0 && (
-                    <span className="flex items-center gap-1">
-                      <Paperclip className="h-3 w-3" />
-                      {(msg.media_urls ?? []).map((url, i) => (
-                        <a
-                          key={url}
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          media {i + 1}
-                        </a>
-                      ))}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={!hasNext}
+              onClick={() => setPage((p) => p + 1)}
+              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
