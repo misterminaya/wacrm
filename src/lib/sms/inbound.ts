@@ -27,12 +27,15 @@ export function parseInboundSms(
   if (!twilioSid || !from || !to) return null
 
   const parsed = Number.parseInt(params.NumMedia ?? '0', 10)
-  const numMedia = Number.isNaN(parsed) || parsed < 0 ? 0 : parsed
+  // Cap at 20 (Twilio's MMS max is 10) so a forged NumMedia can't drive
+  // an unbounded loop.
+  const numMedia =
+    Number.isNaN(parsed) || parsed < 0 ? 0 : Math.min(parsed, 20)
 
   const mediaUrls: string[] = []
   for (let i = 0; i < numMedia; i++) {
     const url = params[`MediaUrl${i}`]
-    if (url) mediaUrls.push(url)
+    if (url && url.startsWith('https://')) mediaUrls.push(url)
   }
 
   return {
@@ -57,7 +60,11 @@ export function pickSmsAccountId(
   envAccountId: string | undefined,
 ): SmsAccountResolution {
   const fromEnv = envAccountId?.trim()
-  if (fromEnv) return { accountId: fromEnv }
+  if (fromEnv) {
+    return accountIds.includes(fromEnv)
+      ? { accountId: fromEnv }
+      : { error: 'TWILIO_SMS_ACCOUNT_ID does not match any existing account' }
+  }
   if (accountIds.length === 1) return { accountId: accountIds[0] }
   if (accountIds.length === 0) return { error: 'no accounts exist yet' }
   return {

@@ -58,6 +58,21 @@ describe('parseInboundSms', () => {
     expect(parsed?.numMedia).toBe(0)
     expect(parsed?.mediaUrls).toBeNull()
   })
+
+  it('caps numMedia at 20 for a forged huge NumMedia', () => {
+    const parsed = parseInboundSms({ ...base, NumMedia: '999999999' })
+    expect(parsed?.numMedia).toBe(20)
+  })
+
+  it('drops media URLs that are not https://', () => {
+    const parsed = parseInboundSms({
+      ...base,
+      NumMedia: '2',
+      MediaUrl0: 'javascript:alert(1)',
+      MediaUrl1: 'https://api.twilio.com/media/1',
+    })
+    expect(parsed?.mediaUrls).toEqual(['https://api.twilio.com/media/1'])
+  })
 })
 
 describe('pickSmsAccountId', () => {
@@ -81,5 +96,10 @@ describe('pickSmsAccountId', () => {
 
   it('treats a blank env var as unset', () => {
     expect(pickSmsAccountId(['a1'], '  ')).toEqual({ accountId: 'a1' })
+  })
+
+  it('errors when the env override does not match any account', () => {
+    const res = pickSmsAccountId(['a1'], 'a9')
+    expect('error' in res && res.error).toMatch(/TWILIO_SMS_ACCOUNT_ID/)
   })
 })

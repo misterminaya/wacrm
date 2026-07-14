@@ -6,7 +6,7 @@ import {
 } from './twilio-signature'
 
 const AUTH_TOKEN = 'test-auth-token-12345'
-const URL = 'https://crm.example.com/api/twilio/webhook'
+const WEBHOOK_URL = 'https://crm.example.com/api/twilio/webhook'
 
 /**
  * Independent reference implementation: hand-concatenates the sorted
@@ -21,7 +21,7 @@ function referenceSignature(concatenated: string): string {
 }
 
 describe('computeTwilioSignature', () => {
-  it('concatenates sorted param names + values after the URL', () => {
+  it('concatenates sorted param names + values after the WEBHOOK_URL', () => {
     // Insertion order deliberately unsorted (From before Body).
     const params = {
       From: '+15551234567',
@@ -30,27 +30,27 @@ describe('computeTwilioSignature', () => {
     }
     // Sorted: Body, From, MessageSid
     const expected = referenceSignature(
-      URL + 'Body' + 'Hello' + 'From' + '+15551234567' + 'MessageSid' + 'SM123',
+      WEBHOOK_URL + 'Body' + 'Hello' + 'From' + '+15551234567' + 'MessageSid' + 'SM123',
     )
-    expect(computeTwilioSignature(AUTH_TOKEN, URL, params)).toBe(expected)
+    expect(computeTwilioSignature(AUTH_TOKEN, WEBHOOK_URL, params)).toBe(expected)
   })
 
-  it('signs the bare URL when there are no params', () => {
-    expect(computeTwilioSignature(AUTH_TOKEN, URL, {})).toBe(
-      referenceSignature(URL),
+  it('signs the bare WEBHOOK_URL when there are no params', () => {
+    expect(computeTwilioSignature(AUTH_TOKEN, WEBHOOK_URL, {})).toBe(
+      referenceSignature(WEBHOOK_URL),
     )
   })
 })
 
 describe('verifyTwilioSignature', () => {
   const params = { Body: 'Hi', From: '+15551234567', MessageSid: 'SM1' }
-  const valid = () => computeTwilioSignature(AUTH_TOKEN, URL, params)
+  const valid = () => computeTwilioSignature(AUTH_TOKEN, WEBHOOK_URL, params)
 
   it('accepts a valid signature', () => {
     expect(
       verifyTwilioSignature({
         authToken: AUTH_TOKEN,
-        url: URL,
+        url: WEBHOOK_URL,
         params,
         signatureHeader: valid(),
       }),
@@ -61,7 +61,7 @@ describe('verifyTwilioSignature', () => {
     expect(
       verifyTwilioSignature({
         authToken: AUTH_TOKEN,
-        url: URL,
+        url: WEBHOOK_URL,
         params,
         signatureHeader: null,
       }),
@@ -75,7 +75,7 @@ describe('verifyTwilioSignature', () => {
     expect(
       verifyTwilioSignature({
         authToken: AUTH_TOKEN,
-        url: URL,
+        url: WEBHOOK_URL,
         params,
         signatureHeader: tampered,
       }),
@@ -86,7 +86,7 @@ describe('verifyTwilioSignature', () => {
     expect(
       verifyTwilioSignature({
         authToken: AUTH_TOKEN,
-        url: URL,
+        url: WEBHOOK_URL,
         params,
         signatureHeader: 'short',
       }),
@@ -97,18 +97,18 @@ describe('verifyTwilioSignature', () => {
     expect(
       verifyTwilioSignature({
         authToken: AUTH_TOKEN,
-        url: URL,
+        url: WEBHOOK_URL,
         params: { ...params, Body: 'Hi!' },
         signatureHeader: valid(),
       }),
     ).toBe(false)
   })
 
-  it('rejects when the URL differs (e.g. http vs https)', () => {
+  it('rejects when the WEBHOOK_URL differs (e.g. http vs https)', () => {
     expect(
       verifyTwilioSignature({
         authToken: AUTH_TOKEN,
-        url: URL.replace('https://', 'http://'),
+        url: WEBHOOK_URL.replace('https://', 'http://'),
         params,
         signatureHeader: valid(),
       }),
