@@ -110,6 +110,22 @@ export async function GET() {
       )
     }
 
+    // Partial row (verify token saved before Meta credentials). Not an
+    // error state — don't fall through to decrypt(null) which would
+    // misreport this as token corruption with a Reset banner.
+    if (!config.access_token || !config.phone_number_id) {
+      return NextResponse.json(
+        {
+          connected: false,
+          reason: 'partial_config',
+          verify_token_saved: true,
+          message:
+            'Verify token saved. Add your Phone Number ID and Access Token to finish connecting WhatsApp.',
+        },
+        { status: 200 }
+      )
+    }
+
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.
     // If this fails, the key changed (or was never consistent across envs).
     let accessToken: string
@@ -186,6 +202,71 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+
+    // ── Partial save: verify token only ──────────────────────────────
+    // Lets the operator store the webhook verify token BEFORE having
+    // Meta credentials, so Facebook's "Verify and save" handshake can
+    // succeed while the number is still being verified. The row stays
+    // status='disconnected' with NULL credentials until the full save
+    // below replaces it (migration 037 made the columns nullable).
+    if (!access_token && !phone_number_id) {
+      if (typeof verify_token !== 'string' || !verify_token.trim()) {
+        return NextResponse.json(
+          { error: 'access_token and phone_number_id are required' },
+          { status: 400 }
+        )
+      }
+
+      let encryptedVerifyToken: string
+      try {
+        encryptedVerifyToken = encrypt(verify_token.trim())
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown encryption error'
+        console.error('Encryption failed:', message)
+        return NextResponse.json(
+          {
+            error:
+              'Failed to encrypt token. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.',
+          },
+          { status: 500 }
+        )
+      }
+
+      const { data: existingRow } = await supabase
+        .from('whatsapp_config')
+        .select('id')
+        .eq('account_id', accountId)
+        .maybeSingle()
+
+      const writeError = existingRow
+        ? (
+            await supabase
+              .from('whatsapp_config')
+              .update({
+                verify_token: encryptedVerifyToken,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('account_id', accountId)
+          ).error
+        : (
+            await supabase.from('whatsapp_config').insert({
+              account_id: accountId,
+              user_id: user.id,
+              verify_token: encryptedVerifyToken,
+              status: 'disconnected',
+            })
+          ).error
+
+      if (writeError) {
+        console.error('Error saving verify token:', writeError)
+        return NextResponse.json(
+          { error: 'Failed to save verify token' },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ success: true, saved: true, partial: true })
+    }
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(
