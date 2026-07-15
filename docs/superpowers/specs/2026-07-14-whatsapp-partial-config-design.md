@@ -62,7 +62,10 @@ botón de reset (UX equivocada). Nuevo branch ANTES del decrypt:
   ID y el access token cuando los tengas".
 - `handleSave` (guardado completo) no cambia.
 - i18n: claves nuevas en `messages/en.json` → sección `Settings.whatsapp`:
-  `saveVerifyTokenOnly`, `verifyTokenSaved` (toast), `partialConfigBanner`.
+  `saveVerifyTokenOnly`, `verifyTokenSaved` (toast). El estado `partial_config`
+  del GET fluye por el renderizado de mensaje-desconectado existente (no
+  activa el banner de reset porque `resetReason` solo se setea para
+  `token_corrupted`/`meta_api_error`), así que no necesita clave propia.
 
 ### 5. Guardas en consumidores de `access_token` (credenciales NULL ⇒ "no configurado")
 
