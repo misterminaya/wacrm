@@ -57,10 +57,10 @@ export async function resolveConversationByPhone(
   // connected — the same error the send would raise anyway.
   const { data: config } = await db
     .from('whatsapp_config')
-    .select('id')
+    .select('id, access_token, phone_number_id')
     .eq('account_id', accountId)
     .maybeSingle();
-  if (!config) {
+  if (!config || !config.access_token || !config.phone_number_id) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',

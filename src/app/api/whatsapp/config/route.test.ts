@@ -100,10 +100,18 @@ describe('POST /api/whatsapp/config — partial save (verify token only)', () =>
     expect(configInserts).toHaveLength(0)
     expect(configUpdates).toHaveLength(1)
     expect(configUpdates[0].verify_token).not.toBe('rotated-token')
+    expect(Object.keys(configUpdates[0]).sort()).toEqual(['updated_at', 'verify_token'])
   })
 
   it('keeps the existing 400 for other incomplete bodies', async () => {
     const res = await postConfig({ phone_number_id: 'PNID-1' })
+    const json = await res.json()
+    expect(res.status).toBe(400)
+    expect(json.error).toMatch(/access_token and phone_number_id are required/)
+  })
+
+  it('400s on the asymmetric incomplete body (access_token alone)', async () => {
+    const res = await postConfig({ access_token: 'x' })
     const json = await res.json()
     expect(res.status).toBe(400)
     expect(json.error).toMatch(/access_token and phone_number_id are required/)
@@ -135,6 +143,7 @@ describe('GET /api/whatsapp/config — partial row', () => {
       phone_number_id: null,
       access_token: null,
       status: 'disconnected',
+      verify_token: 'enc-something',
     }
     const res = await GET()
     const json = await res.json()

@@ -296,6 +296,7 @@ export function WhatsAppConfig() {
         return;
       }
       toast.success(t('verifyTokenSaved'));
+      if (accountId) await fetchConfig(accountId);
     } catch {
       toast.error('Failed to save verify token');
     } finally {
@@ -658,7 +659,7 @@ export function WhatsAppConfig() {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={savingToken || !verifyToken.trim()}
+                disabled={savingToken || saving || !verifyToken.trim()}
                 onClick={handleSaveVerifyToken}
                 className="border-border text-muted-foreground hover:bg-muted hover:text-foreground"
               >
@@ -730,7 +731,7 @@ export function WhatsAppConfig() {
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || savingToken}
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             {saving ? (

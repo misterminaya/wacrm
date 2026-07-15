@@ -87,7 +87,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, access_token, status, verify_token')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -118,7 +118,7 @@ export async function GET() {
         {
           connected: false,
           reason: 'partial_config',
-          verify_token_saved: true,
+          verify_token_saved: !!config.verify_token,
           message:
             'Verify token saved. Add your Phone Number ID and Access Token to finish connecting WhatsApp.',
         },
@@ -438,7 +438,6 @@ export async function POST(request: Request) {
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
-      verify_token: encryptedVerifyToken,
       status: registrationError ? 'disconnected' : 'connected',
       connected_at: registrationError ? null : new Date().toISOString(),
       registered_at: registrationError ? null : registeredAt,
@@ -447,10 +446,25 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     }
 
+    // Invariant: a blank verify-token field must never wipe a
+    // previously saved token. The form always clears this field on
+    // reload (see fetchConfig in whatsapp-config.tsx), so the common
+    // "save token → reload → complete credentials" flow submits the
+    // full save with verify_token empty even though one IS stored.
+    // Only write the column when the caller actually supplied a new
+    // token; when updating an existing row with none supplied, omit
+    // the key entirely so the update leaves the stored value alone.
+    const rowForWrite =
+      verify_token && verify_token.trim()
+        ? { ...baseRow, verify_token: encryptedVerifyToken }
+        : existing
+          ? baseRow
+          : { ...baseRow, verify_token: null }
+
     if (existing) {
       const { error: updateError } = await supabase
         .from('whatsapp_config')
-        .update(baseRow)
+        .update(rowForWrite)
         .eq('account_id', accountId)
 
       if (updateError) {
@@ -470,7 +484,7 @@ export async function POST(request: Request) {
         .insert({
           account_id: accountId,
           user_id: user.id,
-          ...baseRow,
+          ...rowForWrite,
         })
 
       if (insertError) {

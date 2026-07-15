@@ -283,7 +283,7 @@ export async function DELETE(
         .select('*')
         .eq('account_id', accountId)
         .single()
-      if (configError || !config || !config.waba_id) {
+      if (configError || !config || !config.waba_id || !config.access_token) {
         return NextResponse.json(
           { error: 'WhatsApp not configured — cannot delete on Meta.' },
           { status: 400 },
