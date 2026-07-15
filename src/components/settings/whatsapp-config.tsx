@@ -48,6 +48,7 @@ export function WhatsAppConfig() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingToken, setSavingToken] = useState(false);
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -274,6 +275,31 @@ export function WhatsAppConfig() {
       toast.error('Failed to save configuration');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Partial save: store only the webhook verify token so the operator
+  // can complete Facebook's webhook verification before having Meta
+  // credentials (the full save still requires and validates them).
+  async function handleSaveVerifyToken() {
+    if (!verifyToken.trim()) return;
+    try {
+      setSavingToken(true);
+      const res = await fetch('/api/whatsapp/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verify_token: verifyToken.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.saved) {
+        toast.error(data.error ?? 'Failed to save verify token');
+        return;
+      }
+      toast.success(t('verifyTokenSaved'));
+    } catch {
+      toast.error('Failed to save verify token');
+    } finally {
+      setSavingToken(false);
     }
   }
 
@@ -628,6 +654,23 @@ export function WhatsAppConfig() {
               <p className="text-xs text-muted-foreground">
                 {t('webhookVerifyTokenHint')}
               </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={savingToken || !verifyToken.trim()}
+                onClick={handleSaveVerifyToken}
+                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {savingToken ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    {t('saving')}
+                  </>
+                ) : (
+                  t('saveVerifyTokenOnly')
+                )}
+              </Button>
             </div>
 
             <div className="space-y-2">
