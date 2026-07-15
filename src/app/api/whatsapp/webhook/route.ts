@@ -284,6 +284,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const config = configRows[0]
 
+      if (!config.access_token || !config.phone_number_id) {
+        console.error('Incomplete whatsapp_config (missing credentials) for phone_number_id:', phoneNumberId)
+        continue
+      }
+
       const decryptedAccessToken = decrypt(config.access_token)
 
       for (let i = 0; i < value.messages.length; i++) {

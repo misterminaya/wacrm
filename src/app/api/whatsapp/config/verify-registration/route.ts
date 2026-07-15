@@ -61,7 +61,7 @@ export async function GET() {
     .eq('account_id', accountId)
     .maybeSingle()
 
-  if (!config) {
+  if (!config || !config.access_token || !config.phone_number_id) {
     return NextResponse.json({
       live: false,
       checks: { config_exists: false },
