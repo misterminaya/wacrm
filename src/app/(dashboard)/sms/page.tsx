@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { buildSmsSearchPattern } from "@/lib/sms/search";
+import { buildSmsOrFilter, buildSmsSearchPattern } from "@/lib/sms/search";
 import type { SmsMessage } from "@/types";
 import {
   ChevronLeft,
@@ -44,11 +44,12 @@ export default function SmsPage() {
   // Debounce the search box; a term change always jumps back to page 0.
   useEffect(() => {
     const id = setTimeout(() => {
+      if (searchTerm === debouncedTerm) return;
       setDebouncedTerm(searchTerm);
       setPage(0);
     }, 300);
     return () => clearTimeout(id);
-  }, [searchTerm]);
+  }, [searchTerm, debouncedTerm]);
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -74,12 +75,12 @@ export default function SmsPage() {
       if (seq !== requestSeq.current) return;
       const ids = (matched ?? []).map((c: { id: string }) => c.id);
       // The pattern is safe inside or(): escapeIlike strips , ( ) " and we
-      // quote the value so spaces and + survive PostgREST parsing.
+      // quote the value so spaces and + survive PostgREST parsing. PostgREST
+      // also unescapes \x sequences inside quoted values, so buildSmsOrFilter
+      // doubles the LIKE escape backslashes to survive that unescaping.
       query =
         ids.length > 0
-          ? query.or(
-              `from_number.ilike."${pattern}",contact_id.in.(${ids.join(",")})`,
-            )
+          ? query.or(buildSmsOrFilter(pattern, ids))
           : query.ilike("from_number", pattern);
     }
 
@@ -234,6 +235,7 @@ export default function SmsPage() {
               size="icon-sm"
               disabled={!hasPrev}
               onClick={() => setPage((p) => p - 1)}
+              aria-label="Previous page"
               className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             >
               <ChevronLeft className="size-4" />
@@ -246,6 +248,7 @@ export default function SmsPage() {
               size="icon-sm"
               disabled={!hasNext}
               onClick={() => setPage((p) => p + 1)}
+              aria-label="Next page"
               className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             >
               <ChevronRight className="size-4" />

@@ -32,3 +32,16 @@ export function buildSmsSearchPattern(term: string): string | null {
   if (!cleaned) return null
   return `%${cleaned}%`
 }
+
+/**
+ * Build the PostgREST `.or()` filter that matches an SMS row by sender
+ * number OR by resolved contact ids. The ilike pattern must be embedded
+ * as a double-quoted value ("," and spaces survive parsing only when
+ * quoted) — and PostgREST unescapes `\x` sequences inside quoted values,
+ * so LIKE escape backslashes must be doubled here or they are silently
+ * stripped before reaching Postgres.
+ */
+export function buildSmsOrFilter(pattern: string, contactIds: string[]): string {
+  const quoted = pattern.replace(/\\/g, '\\\\')
+  return `from_number.ilike."${quoted}",contact_id.in.(${contactIds.join(',')})`
+}
