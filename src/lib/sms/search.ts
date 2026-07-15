@@ -6,7 +6,7 @@
 /**
  * Make a user-typed term safe inside an `ilike` pattern that may also be
  * embedded in a PostgREST `.or()` expression:
- *   - `,` `(` `)` would break `.or()` syntax → replaced with spaces
+ *   - `,` `(` `)` `"` would break `.or()` syntax → replaced with spaces
  *     (they never appear in real phone numbers or names);
  *   - `\`, `%`, `_` are LIKE metacharacters → escaped.
  * Order matters: backslashes must be doubled before adding escape
@@ -14,7 +14,7 @@
  */
 export function escapeIlike(term: string): string {
   return term
-    .replace(/[,()]/g, ' ')
+    .replace(/[,()"]/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\\/g, '\\\\')
     .replace(/%/g, '\\%')

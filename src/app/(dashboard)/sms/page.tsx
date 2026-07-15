@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { buildSmsSearchPattern } from "@/lib/sms/search";
@@ -35,6 +35,11 @@ export default function SmsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedTerm, setDebouncedTerm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Guards against out-of-order responses: rapid Next/Prev clicks or a page
+  // click racing the 300ms debounce can let an older fetch resolve after a
+  // newer one. Each load() call claims the next sequence number and only
+  // applies its result if it's still the most recent call.
+  const requestSeq = useRef(0);
 
   // Debounce the search box; a term change always jumps back to page 0.
   useEffect(() => {
@@ -47,6 +52,7 @@ export default function SmsPage() {
 
   const load = useCallback(async () => {
     if (!accountId) return;
+    const seq = ++requestSeq.current;
     const supabase = createClient();
     const pattern = buildSmsSearchPattern(debouncedTerm);
 
@@ -65,8 +71,9 @@ export default function SmsPage() {
         .eq("account_id", accountId)
         .ilike("name", pattern)
         .limit(50);
+      if (seq !== requestSeq.current) return;
       const ids = (matched ?? []).map((c: { id: string }) => c.id);
-      // The pattern is safe inside or(): escapeIlike strips , ( ) and we
+      // The pattern is safe inside or(): escapeIlike strips , ( ) " and we
       // quote the value so spaces and + survive PostgREST parsing.
       query =
         ids.length > 0
@@ -80,6 +87,7 @@ export default function SmsPage() {
       .order("received_at", { ascending: false })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
 
+    if (seq !== requestSeq.current) return;
     if (fetchErr) {
       setError(fetchErr.message);
       return;

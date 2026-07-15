@@ -11,6 +11,11 @@ describe('escapeIlike', () => {
     expect(escapeIlike('a,b(c)d')).toBe('a b c d')
   })
 
+  it('strips double quotes (they would break the quoted or() literal)', () => {
+    expect(escapeIlike('a"b')).toBe('a b')
+    expect(buildSmsSearchPattern('"Lili"')).toBe('%Lili%')
+  })
+
   it('leaves digits, letters, + and spaces intact', () => {
     expect(escapeIlike('+51 999 Lili')).toBe('+51 999 Lili')
   })
