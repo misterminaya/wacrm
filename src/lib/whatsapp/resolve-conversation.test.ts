@@ -12,7 +12,11 @@ import { SendMessageError } from './send-message';
 type ContactRow = { id: string; phone: string; name?: string | null };
 
 interface Script {
-  config?: { user_id: string } | null; // whatsapp_config.maybeSingle
+  config?: {
+    user_id?: string;
+    access_token?: string;
+    phone_number_id?: string;
+  } | null; // whatsapp_config.maybeSingle
   contactCandidates?: ContactRow[]; // contacts .like (same every call)
   /** Per-call `.like` results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
@@ -116,7 +120,11 @@ describe('resolveConversationByPhone', () => {
 
   it('returns the existing contact + conversation without creating', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: {
+        user_id: 'owner-1',
+        access_token: 'enc-token',
+        phone_number_id: 'PNID-1',
+      },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversation: { id: 'cv1' },
     });
@@ -134,7 +142,11 @@ describe('resolveConversationByPhone', () => {
 
   it('creates contact + conversation when none exist', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: {
+        user_id: 'owner-1',
+        access_token: 'enc-token',
+        phone_number_id: 'PNID-1',
+      },
       contactCandidates: [],
       insertedContactId: 'c2',
       existingConversation: null,
@@ -158,7 +170,11 @@ describe('resolveConversationByPhone', () => {
     // 23505 unique violation, and the post-race re-lookup now returns
     // the row a concurrent writer created.
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: {
+        user_id: 'owner-1',
+        access_token: 'enc-token',
+        phone_number_id: 'PNID-1',
+      },
       contactCandidatesByCall: [[], [{ id: 'c-raced', phone: '14155550123' }]],
       insertContactError: { code: '23505' },
       existingConversation: { id: 'cv-raced' },
