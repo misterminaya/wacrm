@@ -254,7 +254,7 @@ export async function sendMessageToConversation(
     .eq('account_id', accountId)
     .single();
 
-  if (configError || !config) {
+  if (configError || !config || !config.access_token || !config.phone_number_id) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',

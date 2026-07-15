@@ -19,6 +19,17 @@ let contactRow: Record<string, unknown> | null = null
 // just the id, so the mock must model insert-then-select-by-id.
 let createdConversation: Record<string, unknown> | null = null
 
+// Config row served by the whatsapp_config mock — tests can null out
+// credentials to simulate a partial (verify-token-only) row.
+let whatsappConfigRow: Record<string, unknown> | null = null
+
+const DEFAULT_CONFIG_ROW = {
+  id: 'cfg-1',
+  account_id: 'acct-1',
+  phone_number_id: 'PNID-1',
+  access_token: 'enc-token',
+}
+
 const CONTACT = {
   id: 'contact-1',
   account_id: 'acct-1',
@@ -43,15 +54,7 @@ function makeSupabaseMock() {
           // its contact); otherwise fall back to the canned existing row.
           return { data: createdConversation ?? existingConversation, error: null }
         case 'whatsapp_config':
-          return {
-            data: {
-              id: 'cfg-1',
-              account_id: 'acct-1',
-              phone_number_id: 'PNID-1',
-              access_token: 'enc-token',
-            },
-            error: null,
-          }
+          return { data: whatsappConfigRow, error: null }
         case 'message_templates':
           return { data: null, error: null }
         default:
@@ -179,6 +182,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     existingConversation = null
     createdConversation = null
     contactRow = CONTACT
+    whatsappConfigRow = { ...DEFAULT_CONFIG_ROW }
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()
   })
@@ -245,6 +249,27 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
 
     expect(res.status).toBe(404)
     expect(json.error).toMatch(/contact not found/i)
+    expect(sendTemplateMessage).not.toHaveBeenCalled()
+  })
+
+  it('400s with not-configured when the config row is partial (verify token only)', async () => {
+    whatsappConfigRow = {
+      ...DEFAULT_CONFIG_ROW,
+      access_token: null,
+      phone_number_id: null,
+    }
+    existingConversation = {
+      id: 'conv-1',
+      account_id: 'acct-1',
+      contact_id: 'contact-1',
+      contact: CONTACT,
+    }
+
+    const res = await postContactTemplate()
+    const json = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(json.error).toMatch(/not configured/i)
     expect(sendTemplateMessage).not.toHaveBeenCalled()
   })
 

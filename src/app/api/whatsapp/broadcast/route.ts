@@ -140,7 +140,7 @@ export async function POST(request: Request) {
       .eq('account_id', accountId)
       .single()
 
-    if (configError || !config) {
+    if (configError || !config || !config.access_token || !config.phone_number_id) {
       return NextResponse.json(
         {
           error:
